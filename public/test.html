@@ -1,21 +1,379 @@
-<html>
-    <div>
-        testtest
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>へぇボタン</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f5f5f5;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2rem;
+        }
+
+        .status {
+            text-align: center;
+            padding: 10px 20px;
+            background-color: #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .status.connected {
+            background-color: #4caf50;
+            color: white;
+        }
+
+        .users-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .user-card {
+            background-color: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .user-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+        }
+
+        .user-card.current-user {
+            border: 2px solid #2196f3;
+            background-color: #e3f2fd;
+        }
+
+        .user-name {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 10px;
+            word-break: break-all;
+        }
+
+        .click-count {
+            font-size: 36px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .click-button {
+            background-color: #2196f3;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+            width: 100%;
+        }
+
+        .click-button:hover {
+            background-color: #1976d2;
+        }
+
+        .click-button:active {
+            transform: scale(0.95);
+        }
+
+        .click-button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        .my-id {
+            text-align: center;
+            font-size: 12px;
+            color: #999;
+            margin-top: 20px;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .user-card {
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.05);
+            }
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        .click-count.updated {
+            animation: pulse 0.3s ease-out;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>へぇボタン</h1>
+        <div class="status" id="status">接続中...</div>
+        <div class="users-grid" id="users-grid"></div>
+        <div class="my-id" id="my-id"></div>
     </div>
+
     <script>
-      const socket = new WebSocket("/websocket");
-      socket.addEventListener("message", (event) => {
-        console.log("Message from server ", event.data);
-      });
-      socket.addEventListener("open", (event) => {
-        socket.send("Hello Server!");
-      });
-  
-      // send
-      // setInterval(() => {
-      //   if (socket.readyState === WebSocket.OPEN) {
-      //     socket.send("Ping");
-      //   }
-      // }, 1000);
+        let socket = null;
+        let myUid = null;
+        const users = new Map();
+        let isReconnecting = false;
+        let reconnectTimeout = null;
+
+        function getCookie(name) {
+            console.log('Getting cookie:', name);
+            console.log('document.cookie:', document.cookie);
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) {
+                const cookieValue = parts.pop().split(';').shift().trim();
+                console.log(`Cookie ${name}: "${cookieValue}" (length: ${cookieValue.length})`);
+                return cookieValue;
+            }
+            console.log(`Cookie ${name} not found in cookies:`, document.cookie);
+            return null;
+        }
+
+        function createUserCard(uid, clicks, isCurrentUser = false) {
+            const card = document.createElement('div');
+            card.className = `user-card ${isCurrentUser ? 'current-user' : ''}`;
+            card.id = `user-${uid}`;
+            
+            console.log(`Creating card for ${uid}, isCurrentUser: ${isCurrentUser}, myUid: ${myUid}`);
+            
+            card.innerHTML = `
+                <div class="user-name">ユーザー: ${uid.substring(0, 8)}...</div>
+                <div class="click-count" id="count-${uid}">${clicks}</div>
+                ${isCurrentUser ? 
+                    '<button class="click-button" onclick="handleClick()">クリック!</button>' : 
+                    '<button class="click-button" disabled>他のユーザー</button>'
+                }
+            `;
+            
+            return card;
+        }
+
+        function updateUserCount(uid, clicks) {
+            const countElement = document.getElementById(`count-${uid}`);
+            if (countElement) {
+                countElement.textContent = clicks;
+                countElement.classList.add('updated');
+                setTimeout(() => countElement.classList.remove('updated'), 300);
+            }
+        }
+
+        function removeUser(uid) {
+            const card = document.getElementById(`user-${uid}`);
+            if (card) {
+                card.style.animation = 'fadeIn 0.3s ease-out reverse';
+                setTimeout(() => card.remove(), 300);
+            }
+            users.delete(uid);
+        }
+
+        function handleClick() {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ type: 'click' }));
+            }
+        }
+
+        function connectWebSocket() {
+            // Close existing socket if any
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+                console.log('Closing existing socket');
+                socket.close();
+                return;
+            }
+            
+            const statusElement = document.getElementById('status');
+            statusElement.textContent = '接続中...';
+            statusElement.className = 'status';
+
+            console.log('Creating new WebSocket connection');
+            const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/websocket`;
+            console.log('WebSocket URL:', wsUrl);
+            socket = new WebSocket(wsUrl);
+
+            socket.addEventListener('open', (event) => {
+                statusElement.textContent = '接続済み';
+                statusElement.className = 'status connected';
+                
+                // Make sure we have the UID from cookie
+                console.log('myUid before getting cookie:', myUid);
+                if (!myUid) {
+                    myUid = getCookie('uid');
+                    if (myUid) {
+                        document.getElementById('my-id').textContent = `あなたのID: ${myUid}`;
+                        console.log('Set myUid from cookie:', myUid);
+                    } else {
+                        console.error('No UID cookie found!');
+                    }
+                }
+                console.log('Connected with UID:', myUid, 'Type:', typeof myUid);
+                
+                // Request initial state
+                socket.send(JSON.stringify({ type: 'init' }));
+            });
+
+            socket.addEventListener('message', (event) => {
+                const data = JSON.parse(event.data);
+                
+                switch (data.type) {
+                    case 'init':
+                        // Clear existing users
+                        document.getElementById('users-grid').innerHTML = '';
+                        users.clear();
+                        
+                        // Add all users
+                        console.log('Received users:', data.users);
+                        console.log('My UID before:', myUid);
+                        
+                        // If we don't have a UID from cookie, try to determine it from the current connection
+                        if (!myUid && data.currentUid) {
+                            myUid = data.currentUid;
+                            console.log('Set myUid from server response:', myUid);
+                            document.getElementById('my-id').textContent = `あなたのID: ${myUid}`;
+                        }
+                        
+                        data.users.forEach(user => {
+                            users.set(user.uid, user.clicks);
+                            // Trim and compare UIDs
+                            const trimmedUserUid = user.uid.trim();
+                            const trimmedMyUid = myUid ? myUid.trim() : '';
+                            const isMe = trimmedUserUid === trimmedMyUid;
+                            console.log(`Comparing UIDs: "${user.uid}" vs "${myUid}" (trimmed: "${trimmedUserUid}" vs "${trimmedMyUid}") = ${isMe}`);
+                            const card = createUserCard(user.uid, user.clicks, isMe);
+                            document.getElementById('users-grid').appendChild(card);
+                        });
+                        
+                        // If current user is not in the list, add them with 0 clicks
+                        if (myUid && !users.has(myUid)) {
+                            console.log('Current user not in list, adding with 0 clicks');
+                            users.set(myUid, 0);
+                            const card = createUserCard(myUid, 0, true);
+                            document.getElementById('users-grid').appendChild(card);
+                        }
+                        break;
+                        
+                    case 'user_joined':
+                        if (!users.has(data.uid)) {
+                            users.set(data.uid, data.clicks);
+                            const card = createUserCard(data.uid, data.clicks, data.uid === myUid);
+                            document.getElementById('users-grid').appendChild(card);
+                        }
+                        break;
+                        
+                    case 'user_left':
+                        removeUser(data.uid);
+                        break;
+                        
+                    case 'update':
+                        users.set(data.uid, data.clicks);
+                        updateUserCount(data.uid, data.clicks);
+                        break;
+                }
+            });
+
+            socket.addEventListener('close', (event) => {
+                console.log('WebSocket closed:', event);
+                statusElement.textContent = '切断されました - 再接続中...';
+                statusElement.className = 'status';
+                
+                // Prevent multiple reconnection attempts
+                if (!isReconnecting) {
+                    isReconnecting = true;
+                    if (reconnectTimeout) {
+                        clearTimeout(reconnectTimeout);
+                    }
+                    reconnectTimeout = setTimeout(() => {
+                        isReconnecting = false;
+                        connectWebSocket();
+                    }, 3000);
+                }
+            });
+
+            socket.addEventListener('error', (event) => {
+                console.error('WebSocket error:', event);
+                statusElement.textContent = 'エラーが発生しました';
+                statusElement.className = 'status';
+            });
+        }
+
+        // Initialize connection when page loads
+        window.addEventListener('load', () => {
+            console.log('Page loaded, getting UID from cookie...');
+            console.log('All cookies:', document.cookie);
+            
+            // Test setting and reading a cookie
+            document.cookie = "test=123; Path=/";
+            console.log('After setting test cookie:', document.cookie);
+            
+            // Get UID from cookie first
+            myUid = getCookie('uid');
+            if (myUid) {
+                document.getElementById('my-id').textContent = `あなたのID: ${myUid}`;
+                console.log('Initial myUid set to:', myUid);
+            } else {
+                console.warn('No UID cookie found on page load');
+                // Try to get UID from the WebSocket URL parameter instead
+            }
+            connectWebSocket();
+        });
+        
+        // Prevent multiple connections on page visibility change
+        window.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                // Page is hidden, don't reconnect
+                if (reconnectTimeout) {
+                    clearTimeout(reconnectTimeout);
+                    reconnectTimeout = null;
+                }
+            }
+        });
     </script>
+</body>
 </html>
