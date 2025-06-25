@@ -470,6 +470,18 @@
                             updateTotalCount(data.totalClicks);
                         }
                         break;
+                        
+                    case 'reset':
+                        // Reset all user counts to 0
+                        for (const [uid, userData] of users.entries()) {
+                            userData.clicks = 0;
+                            updateUserCount(uid, 0);
+                        }
+                        
+                        // Reset total count
+                        updateTotalCount(0);
+                        console.log('All click counts have been reset');
+                        break;
                 }
             });
 

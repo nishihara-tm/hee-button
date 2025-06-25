@@ -41,6 +41,39 @@ export class WebSocketServer extends DurableObject {
 
 	async fetch(request: Request): Promise<Response> {
 		const url = new URL(request.url);
+		
+		// Handle reset endpoint
+		if (url.pathname === '/reset' && request.method === 'POST') {
+			try {
+				// Delete all click data from storage
+				await this.ctx.storage.deleteAll();
+				
+				// Reset in-memory users
+				for (const [ws, user] of this.users.entries()) {
+					user.clicks = 0;
+				}
+				
+				// Broadcast reset to all connected clients
+				this.broadcast({
+					type: 'reset',
+					totalClicks: 0
+				});
+				
+				return new Response(JSON.stringify({ success: true }), {
+					headers: { 'Content-Type': 'application/json' }
+				});
+			} catch (error) {
+				return new Response(JSON.stringify({ 
+					success: false, 
+					error: 'Failed to reset data' 
+				}), {
+					status: 500,
+					headers: { 'Content-Type': 'application/json' }
+				});
+			}
+		}
+		
+		// Handle WebSocket connection
 		const uid = url.searchParams.get('uid');
 		if (!uid) {
 			return new Response('Missing uid parameter', { status: 400 });
@@ -201,6 +234,33 @@ export default {
 					"set-cookie": `uid=${uid}; Path=/`,
 				}
 			})
+		}
+		if(url.pathname === '/reset') {
+			// Reset all click counts
+			let id = env.WEB_SOCKET_SERVER.idFromName('clicktracker');
+			let stub = env.WEB_SOCKET_SERVER.get(id);
+			
+			// Call reset method on the Durable Object
+			const resetResponse = await stub.fetch(new Request(new URL('/reset', request.url), {
+				method: 'POST'
+			}));
+			
+			if (resetResponse.ok) {
+				return new Response(JSON.stringify({
+					message: 'All click counts have been reset to 0',
+					success: true
+				}), {
+					headers: { 'Content-Type': 'application/json' }
+				});
+			} else {
+				return new Response(JSON.stringify({
+					message: 'Failed to reset click counts',
+					success: false
+				}), {
+					status: 500,
+					headers: { 'Content-Type': 'application/json' }
+				});
+			}
 		}
 		if(url.pathname === '/websocket') {
 			const upgradeHeader = request.headers.get('Upgrade');

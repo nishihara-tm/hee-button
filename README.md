@@ -91,6 +91,7 @@ toy-box/
 
 - `GET /` - へぇボタンのUIページ（メインページ）
 - `GET /counter` - ユーザー別カウンターAPI（Cookie認証）
+- `GET /reset` - 全員のクリック数を0にリセット
 - `WebSocket /websocket` - リアルタイム通信用のWebSocketエンドポイント
 
 ## 📝 WebSocket メッセージプロトコル
@@ -133,6 +134,12 @@ toy-box/
 {
   "type": "user_left",
   "uid": "xxx"
+}
+
+// リセット通知
+{
+  "type": "reset",
+  "totalClicks": 0
 }
 ```
 
