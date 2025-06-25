@@ -49,7 +49,16 @@
 				"class_name": "WebSocketServer"
 			}
 		]
-	}
+	},
+    "migrations": [
+      {
+        "tag": "v1",
+        "new_sqlite_classes": [
+          "Counter",
+          "WebSocketServer"
+        ]
+      }
+    ]
 
 	/**
 	 * Service Bindings (communicate between multiple Workers)

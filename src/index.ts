@@ -34,13 +34,9 @@ export class Counter extends DurableObject {
 
 export class WebSocketServer extends DurableObject {
 	private users: Map<WebSocket, { uid: string, clicks: number }> = new Map();
-	private allUserClicks: Record<string, number> = {};
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
-		this.ctx.blockConcurrencyWhile(async () => {
-			this.allUserClicks = await this.ctx.storage.get<Record<string, number>>('userClicks') || {};
-		});
 	}
 
 	async fetch(request: Request): Promise<Response> {
@@ -53,7 +49,7 @@ export class WebSocketServer extends DurableObject {
 		const webSocketPair = new WebSocketPair();
 		const [client, server] = Object.values(webSocketPair);
 		
-		const clicks = this.allUserClicks[uid] || 0;
+		const clicks = await this.getUserClicks(uid);
 		
 		this.ctx.acceptWebSocket(server);
 		this.users.set(server, { uid, clicks });
@@ -72,43 +68,25 @@ export class WebSocketServer extends DurableObject {
 			const data = JSON.parse(message.toString());
 			
 			if (data.type === 'click') {
-				// Increment in the shared storage
-				this.allUserClicks[user.uid] = (this.allUserClicks[user.uid] || 0) + 1;
-				user.clicks = this.allUserClicks[user.uid];
+				// Increment the click count
+				const newClicks = await this.incrementUserClicks(user.uid);
+				user.clicks = newClicks;
 				
 				// Update all connections with the same UID
 				for (const [otherWs, otherUser] of this.users.entries()) {
 					if (otherUser.uid === user.uid) {
-						otherUser.clicks = this.allUserClicks[user.uid];
+						otherUser.clicks = newClicks;
 					}
 				}
-				
-				// Persist to storage
-				await this.ctx.storage.put('userClicks', this.allUserClicks);
 				
 				this.broadcast({
 					type: 'update',
 					uid: user.uid,
-					clicks: this.allUserClicks[user.uid]
+					clicks: newClicks
 				});
 			} else if (data.type === 'init') {
-				// Get all users who have ever clicked, including disconnected ones
-				const allUsers = [];
-				
-				// Add all historical users from storage
-				for (const [uid, clicks] of Object.entries(this.allUserClicks)) {
-					allUsers.push({ uid, clicks });
-				}
-				
-				// Update with current connected users (in case they have newer click counts)
-				for (const [ws, user] of this.users.entries()) {
-					const existingIndex = allUsers.findIndex(u => u.uid === user.uid);
-					if (existingIndex >= 0) {
-						allUsers[existingIndex].clicks = user.clicks;
-					} else {
-						allUsers.push({ uid: user.uid, clicks: user.clicks });
-					}
-				}
+				// Get all users who have ever clicked
+				const allUsers = await this.getAllUsers();
 				
 				ws.send(JSON.stringify({
 					type: 'init',
@@ -152,6 +130,40 @@ export class WebSocketServer extends DurableObject {
 				ws.send(msg);
 			}
 		}
+	}
+
+	private async getUserClicks(uid: string): Promise<number> {
+		const key = `clicks:${uid}`;
+		const clicks = await this.ctx.storage.get<number>(key);
+		return clicks || 0;
+	}
+
+	private async incrementUserClicks(uid: string): Promise<number> {
+		const key = `clicks:${uid}`;
+		const currentClicks = await this.getUserClicks(uid);
+		const newClicks = currentClicks + 1;
+		await this.ctx.storage.put(key, newClicks);
+		return newClicks;
+	}
+
+	private async getAllUsers(): Promise<Array<{ uid: string, clicks: number }>> {
+		// Get all keys that start with "clicks:"
+		const allKeys = await this.ctx.storage.list({ prefix: 'clicks:' });
+		const users = [];
+		
+		for (const [key, value] of allKeys) {
+			const uid = key.replace('clicks:', '');
+			users.push({ uid, clicks: value as number });
+		}
+		
+		// Also include currently connected users who might not have clicked yet
+		for (const [ws, user] of this.users.entries()) {
+			if (!users.find(u => u.uid === user.uid)) {
+				users.push({ uid: user.uid, clicks: user.clicks });
+			}
+		}
+		
+		return users;
 	}
 }
 
