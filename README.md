@@ -72,6 +72,31 @@ npm run deploy
 
 このプロジェクトは Cloudflare の無料プランでも動作するように、SQLite ベースの Durable Objects を使用しています。
 
+## 🔐 リセット機能の認証
+
+`/reset` エンドポイントは Basic 認証で保護されています。
+
+### デフォルト認証情報
+- **ユーザー名**: `admin`
+- **パスワード**: `reset123`
+
+### カスタム認証情報の設定
+
+本番環境では、`wrangler.jsonc` で環境変数を設定することを強く推奨します：
+
+```json
+{
+  "vars": {
+    "RESET_USERNAME": "your-username",
+    "RESET_PASSWORD": "your-secure-password"
+  }
+}
+```
+
+### 使用方法
+
+ブラウザで `/reset` にアクセスすると、Basic 認証のダイアログが表示されます。認証情報を入力すると、全員のクリック数がリセットされます。
+
 ## 📁 プロジェクト構成
 
 ```
@@ -91,7 +116,7 @@ toy-box/
 
 - `GET /` - へぇボタンのUIページ（メインページ）
 - `GET /counter` - ユーザー別カウンターAPI（Cookie認証）
-- `GET /reset` - 全員のクリック数を0にリセット
+- `GET /reset` - 全員のクリック数を0にリセット（Basic認証が必要）
 - `WebSocket /websocket` - リアルタイム通信用のWebSocketエンドポイント
 
 ## 📝 WebSocket メッセージプロトコル

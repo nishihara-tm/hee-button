@@ -16,6 +16,8 @@ interface Env {
 	ASSETS: Fetcher,
 	COUNTER: DurableObjectNamespace<Counter>,
 	WEB_SOCKET_SERVER: DurableObjectNamespace<WebSocketServer>,
+	RESET_USERNAME?: string,
+	RESET_PASSWORD?: string,
 }
 
 export class Counter extends DurableObject {
@@ -236,6 +238,40 @@ export default {
 			})
 		}
 		if(url.pathname === '/reset') {
+			// Basic Authentication
+			const authHeader = request.headers.get('Authorization');
+			
+			if (!authHeader || !authHeader.startsWith('Basic ')) {
+				return new Response('Unauthorized', {
+					status: 401,
+					headers: {
+						'WWW-Authenticate': 'Basic realm="Reset Endpoint"',
+						'Content-Type': 'text/plain'
+					}
+				});
+			}
+			
+			// Decode Basic Auth credentials
+			const base64Credentials = authHeader.slice(6); // Remove 'Basic '
+			const credentials = atob(base64Credentials);
+			const [username, password] = credentials.split(':');
+			
+			// Check credentials
+			// Default: admin / reset123
+			// You can override these by setting environment variables in wrangler.jsonc
+			const validUsername = env.RESET_USERNAME || 'admin';
+			const validPassword = env.RESET_PASSWORD || 'reset123';
+			
+			if (username !== validUsername || password !== validPassword) {
+				return new Response('Invalid credentials', {
+					status: 401,
+					headers: {
+						'WWW-Authenticate': 'Basic realm="Reset Endpoint"',
+						'Content-Type': 'text/plain'
+					}
+				});
+			}
+			
 			// Reset all click counts
 			let id = env.WEB_SOCKET_SERVER.idFromName('clicktracker');
 			let stub = env.WEB_SOCKET_SERVER.get(id);
