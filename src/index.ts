@@ -189,30 +189,6 @@ export default {
 				}
 			})
 		}
-		if(url.pathname === '/test') {
-			const cookie: Record<string, string> = Object.fromEntries(
-				request.headers
-					.get("cookie")
-					?.split(";")
-					?.map((c) => c.trim().split("=")) ?? []
-			);
-			
-			const response = await env.ASSETS.fetch(new Request(new URL('/test.html', request.url), request));
-			
-			// If user doesn't have a uid cookie, set one
-			if (!cookie['uid']) {
-				const uid = Math.random().toString(36).slice(2);
-				const newHeaders = new Headers(response.headers);
-				newHeaders.set('set-cookie', `uid=${uid}; Path=/`);
-				return new Response(response.body, {
-					status: response.status,
-					statusText: response.statusText,
-					headers: newHeaders
-				});
-			}
-			
-			return response;
-		}
 		if(url.pathname === '/websocket') {
 			const upgradeHeader = request.headers.get('Upgrade');
 			if(!upgradeHeader || upgradeHeader !== 'websocket') {
@@ -253,7 +229,28 @@ export default {
 			return response;
 		}
 		if(url.pathname === '/') {
-			return new Response(JSON.stringify({message: 'Hello, World!'}))
+			const cookie: Record<string, string> = Object.fromEntries(
+				request.headers
+					.get("cookie")
+					?.split(";")
+					?.map((c) => c.trim().split("=")) ?? []
+			);
+			
+			const response = await env.ASSETS.fetch(new Request(new URL('/index.html', request.url), request));
+			
+			// If user doesn't have a uid cookie, set one
+			if (!cookie['uid']) {
+				const uid = Math.random().toString(36).slice(2);
+				const newHeaders = new Headers(response.headers);
+				newHeaders.set('set-cookie', `uid=${uid}; Path=/`);
+				return new Response(response.body, {
+					status: response.status,
+					statusText: response.statusText,
+					headers: newHeaders
+				});
+			}
+			
+			return response;
 		}
 
 		return env.ASSETS.fetch(request);
