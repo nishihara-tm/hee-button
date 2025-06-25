@@ -1,0 +1,21 @@
+<html>
+    <div>
+        testtest
+    </div>
+    <script>
+      const socket = new WebSocket("/websocket");
+      socket.addEventListener("message", (event) => {
+        console.log("Message from server ", event.data);
+      });
+      socket.addEventListener("open", (event) => {
+        socket.send("Hello Server!");
+      });
+  
+      // send
+      // setInterval(() => {
+      //   if (socket.readyState === WebSocket.OPEN) {
+      //     socket.send("Ping");
+      //   }
+      // }, 1000);
+    </script>
+</html>
