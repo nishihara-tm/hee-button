@@ -301,6 +301,94 @@
         .click-count.updated, .total-count.updated {
             animation: pulse 0.3s ease-out;
         }
+
+        /* 花火エフェクト用のスタイル */
+        .fireworks-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        .milestone-message {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.95);
+            color: #333;
+            padding: 15px 25px;
+            border-radius: 25px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            z-index: 1001;
+            opacity: 0;
+            transform: translateX(-50%) translateY(-20px);
+            transition: all 0.3s ease-out;
+        }
+
+        .milestone-message.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .firework {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+        }
+
+        .firework-particle {
+            position: absolute;
+            width: 3px;
+            height: 3px;
+            border-radius: 50%;
+            animation: fireworkParticle 1.2s ease-out forwards;
+        }
+
+        @keyframes fireworkLaunch {
+            0% {
+                transform: translateY(0);
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(-60vh);
+                opacity: 0;
+            }
+        }
+
+        @keyframes fireworkParticle {
+            0% {
+                transform: translate(0, 0) scale(1);
+                opacity: 1;
+            }
+            100% {
+                transform: translate(var(--dx), var(--dy)) scale(0);
+                opacity: 0;
+            }
+        }
+
+        @keyframes rainbowShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        @media (max-width: 480px) {
+            .celebration-message {
+                font-size: 2rem;
+            }
+            
+            .celebration-sub-message {
+                font-size: 1.2rem;
+            }
+        }
     </style>
 </head>
 <body>
@@ -315,12 +403,19 @@
         <div class="my-id" id="my-id"></div>
     </div>
 
+    <!-- 花火エフェクト用のコンテナ -->
+    <div class="fireworks-container" id="fireworks-container"></div>
+    
+    <!-- マイルストーンメッセージ -->
+    <div class="milestone-message" id="milestone-message"></div>
+
     <script>
         let socket = null;
         let myUid = null;
         const users = new Map(); // uid -> { clicks: number, online: boolean }
         let isReconnecting = false;
         let reconnectTimeout = null;
+        let lastCelebrationLevel = 0; // 最後に祝った段階を記録
 
         function getCookie(name) {
             console.log('Getting cookie:', name);
@@ -385,6 +480,135 @@
                 totalElement.classList.add('updated');
                 setTimeout(() => totalElement.classList.remove('updated'), 300);
             }
+            
+            // 記念すべき数字に達した時のエフェクト
+            checkMilestone(totalClicks);
+        }
+
+        function checkMilestone(totalClicks) {
+            let currentLevel = 0;
+            let message = '';
+            let subMessage = '';
+            
+            if (totalClicks >= 150) {
+                currentLevel = 4;
+                message = '🎊 素晴らしい！ 🎊';
+                subMessage = '150回突破！みんなの協力が光る✨';
+            } else if (totalClicks >= 100) {
+                currentLevel = 3;
+                message = '🎉 すごい！ 🎉';
+                subMessage = '100回達成！みんな頑張った👏';
+            } else if (totalClicks >= 50) {
+                currentLevel = 2;
+                message = '🌟 やったね！ 🌟';
+                subMessage = '50回達成！みんなありがとう🙌';
+            } else if (totalClicks >= 10) {
+                currentLevel = 1;
+                message = '👏 いいね！ 👏';
+                subMessage = '10回達成！いい調子だよ✨';
+            }
+            
+            // 新しいレベルに達した場合のみエフェクトを表示
+            if (currentLevel > lastCelebrationLevel) {
+                lastCelebrationLevel = currentLevel;
+                showCelebration(message, subMessage, currentLevel);
+            }
+        }
+
+        function showCelebration(message, subMessage, level) {
+            // メッセージを表示
+            showMilestoneMessage(message + ' ' + subMessage);
+            
+            // エフェクトの種類をレベルに応じて変更
+            if (level === 1) {
+                launchFireworks(3, ['#4caf50', '#2196f3']);
+            } else if (level === 2) {
+                launchFireworks(5, ['#ffd700', '#ff6b35', '#4caf50']);
+            } else if (level === 3) {
+                launchFireworks(8, ['#ff1744', '#ff9800', '#2196f3', '#4caf50']);
+            } else if (level === 4) {
+                launchFireworks(12, ['#e91e63', '#9c27b0', '#3f51b5', '#00bcd4', '#4caf50', '#ffeb3b']);
+                createRainbowEffect();
+            }
+        }
+
+        function showMilestoneMessage(text) {
+            const messageEl = document.getElementById('milestone-message');
+            messageEl.textContent = text;
+            messageEl.classList.add('show');
+            
+            setTimeout(() => {
+                messageEl.classList.remove('show');
+            }, 3000);
+        }
+
+        function launchFireworks(count, colors) {
+            const container = document.getElementById('fireworks-container');
+            
+            for (let i = 0; i < count; i++) {
+                setTimeout(() => {
+                    createSingleFirework(container, colors);
+                }, i * 200);
+            }
+        }
+
+        function createSingleFirework(container, colors) {
+            // 画面下部からランダムな位置で花火を発射
+            const startX = 20 + Math.random() * 60; // 20%〜80%の位置
+            const explodeY = 20 + Math.random() * 40; // 20%〜60%の高さで爆発
+            
+            // 発射部分
+            const launcher = document.createElement('div');
+            launcher.className = 'firework';
+            launcher.style.background = colors[Math.floor(Math.random() * colors.length)];
+            launcher.style.left = startX + '%';
+            launcher.style.bottom = '0px';
+            launcher.style.animation = `fireworkLaunch 0.8s ease-out forwards`;
+            
+            container.appendChild(launcher);
+            
+            // 0.8秒後に爆発エフェクト
+            setTimeout(() => {
+                createExplosion(container, startX, explodeY, colors);
+                launcher.remove();
+            }, 800);
+        }
+
+        function createExplosion(container, x, y, colors) {
+            const particleCount = 8 + Math.random() * 8; // 8〜16個の粒子
+            
+            for (let i = 0; i < particleCount; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'firework-particle';
+                particle.style.background = colors[Math.floor(Math.random() * colors.length)];
+                particle.style.left = x + '%';
+                particle.style.top = y + '%';
+                
+                // 放射状に飛び散る
+                const angle = (i / particleCount) * 2 * Math.PI;
+                const distance = 50 + Math.random() * 100;
+                const dx = Math.cos(angle) * distance;
+                const dy = Math.sin(angle) * distance;
+                
+                particle.style.setProperty('--dx', dx + 'px');
+                particle.style.setProperty('--dy', dy + 'px');
+                
+                container.appendChild(particle);
+                
+                setTimeout(() => particle.remove(), 1200);
+            }
+        }
+
+        function createRainbowEffect() {
+            const totalCounter = document.querySelector('.total-counter');
+            totalCounter.style.background = 'linear-gradient(45deg, #ff1744, #ff9800, #ffeb3b, #4caf50, #2196f3, #9c27b0)';
+            totalCounter.style.backgroundSize = '400% 400%';
+            totalCounter.style.animation = 'rainbowShift 2s ease-in-out';
+            
+            setTimeout(() => {
+                totalCounter.style.background = 'white';
+                totalCounter.style.animation = '';
+            }, 2000);
         }
 
 
