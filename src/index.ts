@@ -86,6 +86,9 @@ export class WebSocketServer extends DurableObject {
 		
 		const clicks = await this.getUserClicks(uid);
 		
+		// Set user as online when connecting
+		await this.setUserOnlineStatus(uid, true);
+		
 		this.ctx.acceptWebSocket(server);
 		this.users.set(server, { uid, clicks });
 
@@ -152,6 +155,9 @@ export class WebSocketServer extends DurableObject {
 		if (user) {
 			this.users.delete(ws);
 			
+			// Set user as offline when disconnecting
+			await this.setUserOnlineStatus(user.uid, false);
+			
 			// Calculate total clicks after user disconnects
 			const allUsers = await this.getAllUsers();
 			const totalClicks = allUsers.reduce((sum, user) => sum + user.clicks, 0);
@@ -194,20 +200,36 @@ export class WebSocketServer extends DurableObject {
 		return newClicks;
 	}
 
-	private async getAllUsers(): Promise<Array<{ uid: string, clicks: number }>> {
+	private async setUserOnlineStatus(uid: string, isOnline: boolean): Promise<void> {
+		const key = `status:${uid}`;
+		await this.ctx.storage.put(key, {
+			online: isOnline,
+			lastSeen: Date.now()
+		});
+	}
+
+	private async getUserOnlineStatus(uid: string): Promise<{ online: boolean, lastSeen: number }> {
+		const key = `status:${uid}`;
+		const status = await this.ctx.storage.get<{ online: boolean, lastSeen: number }>(key);
+		return status || { online: false, lastSeen: 0 };
+	}
+
+	private async getAllUsers(): Promise<Array<{ uid: string, clicks: number, online: boolean }>> {
 		// Get all keys that start with "clicks:"
 		const allKeys = await this.ctx.storage.list({ prefix: 'clicks:' });
 		const users = [];
 		
 		for (const [key, value] of allKeys) {
 			const uid = key.replace('clicks:', '');
-			users.push({ uid, clicks: value as number });
+			const status = await this.getUserOnlineStatus(uid);
+			users.push({ uid, clicks: value as number, online: status.online });
 		}
 		
 		// Also include currently connected users who might not have clicked yet
 		for (const [ws, user] of this.users.entries()) {
 			if (!users.find(u => u.uid === user.uid)) {
-				users.push({ uid: user.uid, clicks: user.clicks });
+				const status = await this.getUserOnlineStatus(user.uid);
+				users.push({ uid: user.uid, clicks: user.clicks, online: status.online });
 			}
 		}
 		

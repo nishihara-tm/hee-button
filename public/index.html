@@ -682,13 +682,15 @@
                         }
                         
                         data.users.forEach(user => {
-                            users.set(user.uid, { clicks: user.clicks, online: true });
+                            // Use online status from server response
+                            const isOnline = user.online !== undefined ? user.online : true;
+                            users.set(user.uid, { clicks: user.clicks, online: isOnline });
                             // Trim and compare UIDs
                             const trimmedUserUid = user.uid.trim();
                             const trimmedMyUid = myUid ? myUid.trim() : '';
                             const isMe = trimmedUserUid === trimmedMyUid;
                             console.log(`Comparing UIDs: "${user.uid}" vs "${myUid}" (trimmed: "${trimmedUserUid}" vs "${trimmedMyUid}") = ${isMe}`);
-                            const card = createUserCard(user.uid, user.clicks, isMe, true);
+                            const card = createUserCard(user.uid, user.clicks, isMe, isOnline);
                             document.getElementById('users-grid').appendChild(card);
                         });
                         
