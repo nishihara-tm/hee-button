@@ -79,19 +79,26 @@ export class WebSocketServer extends DurableObject {
 					}
 				}
 				
+				// Calculate total clicks for broadcast
+				const allUsers = await this.getAllUsers();
+				const totalClicks = allUsers.reduce((sum, user) => sum + user.clicks, 0);
+				
 				this.broadcast({
 					type: 'update',
 					uid: user.uid,
-					clicks: newClicks
+					clicks: newClicks,
+					totalClicks: totalClicks
 				});
 			} else if (data.type === 'init') {
 				// Get all users who have ever clicked
 				const allUsers = await this.getAllUsers();
+				const totalClicks = allUsers.reduce((sum, user) => sum + user.clicks, 0);
 				
 				ws.send(JSON.stringify({
 					type: 'init',
 					users: allUsers,
-					currentUid: user.uid
+					currentUid: user.uid,
+					totalClicks: totalClicks
 				}));
 				
 				this.broadcastExcept(ws, {
@@ -109,9 +116,15 @@ export class WebSocketServer extends DurableObject {
 		const user = this.users.get(ws);
 		if (user) {
 			this.users.delete(ws);
+			
+			// Calculate total clicks after user disconnects
+			const allUsers = await this.getAllUsers();
+			const totalClicks = allUsers.reduce((sum, user) => sum + user.clicks, 0);
+			
 			this.broadcast({
 				type: 'user_left',
-				uid: user.uid
+				uid: user.uid,
+				totalClicks: totalClicks
 			});
 		}
 	}

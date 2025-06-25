@@ -45,6 +45,29 @@
             color: white;
         }
 
+        .total-counter {
+            text-align: center;
+            background-color: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+            border: 2px solid #ff6b35;
+        }
+
+        .total-counter h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.5rem;
+        }
+
+        .total-count {
+            font-size: 4rem;
+            font-weight: bold;
+            color: #ff6b35;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
         .users-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -59,16 +82,97 @@
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
             text-align: center;
             transition: transform 0.2s, box-shadow 0.2s;
+            position: relative;
         }
 
-        .user-card:hover {
+        .user-card:not(.offline)::before {
+            content: "🟢";
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 16px;
+        }
+
+        .user-card:not(.offline) .user-name::after {
+            content: "オンライン";
+            display: inline-block;
+            background-color: #28a745;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+            margin-left: 8px;
+            font-weight: bold;
+        }
+
+        .user-card:not(.offline):hover {
             transform: translateY(-2px);
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+        }
+
+        .user-card.offline:hover {
+            transform: none;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
         }
 
         .user-card.current-user {
             border: 2px solid #2196f3;
             background-color: #e3f2fd;
+        }
+
+        .user-card.offline {
+            opacity: 0.7;
+            background: 
+                repeating-linear-gradient(
+                    45deg,
+                    transparent,
+                    transparent 5px,
+                    rgba(108, 117, 125, 0.1) 5px,
+                    rgba(108, 117, 125, 0.1) 10px
+                ),
+                linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border: 2px dashed #6c757d;
+            position: relative;
+        }
+
+        .user-card.offline::before {
+            content: "💤";
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 20px;
+            animation: fadeInOut 2s infinite;
+        }
+
+        .user-card.offline .user-name {
+            color: #6c757d !important;
+            position: relative;
+        }
+
+        .user-card.offline .user-name::after {
+            content: "オフライン";
+            display: inline-block;
+            background-color: #6c757d;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+            margin-left: 8px;
+            font-weight: bold;
+        }
+
+        .user-card.offline .click-count {
+            color: #6c757d !important;
+        }
+
+        .user-card.offline .click-button {
+            background-color: #6c757d !important;
+            cursor: not-allowed !important;
+        }
+
+        @keyframes fadeInOut {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 1; }
         }
 
         .user-name {
@@ -144,7 +248,7 @@
             }
         }
 
-        .click-count.updated {
+        .click-count.updated, .total-count.updated {
             animation: pulse 0.3s ease-out;
         }
     </style>
@@ -153,6 +257,10 @@
     <div class="container">
         <h1>へぇボタン</h1>
         <div class="status" id="status">接続中...</div>
+        <div class="total-counter">
+            <h2>みんなのへぇ</h2>
+            <div class="total-count" id="total-count">0</div>
+        </div>
         <div class="users-grid" id="users-grid"></div>
         <div class="my-id" id="my-id"></div>
     </div>
@@ -160,7 +268,7 @@
     <script>
         let socket = null;
         let myUid = null;
-        const users = new Map();
+        const users = new Map(); // uid -> { clicks: number, online: boolean }
         let isReconnecting = false;
         let reconnectTimeout = null;
 
@@ -178,12 +286,15 @@
             return null;
         }
 
-        function createUserCard(uid, clicks, isCurrentUser = false) {
+        function createUserCard(uid, clicks, isCurrentUser = false, isOnline = true) {
             const card = document.createElement('div');
-            card.className = `user-card ${isCurrentUser ? 'current-user' : ''}`;
+            let className = 'user-card';
+            if (isCurrentUser) className += ' current-user';
+            if (!isOnline) className += ' offline';
+            card.className = className;
             card.id = `user-${uid}`;
             
-            console.log(`Creating card for ${uid}, isCurrentUser: ${isCurrentUser}, myUid: ${myUid}`);
+            console.log(`Creating card for ${uid}, isCurrentUser: ${isCurrentUser}, isOnline: ${isOnline}, myUid: ${myUid}`);
             
             card.innerHTML = `
                 <div class="user-name">ユーザー: ${uid.substring(0, 8)}...</div>
@@ -197,6 +308,17 @@
             return card;
         }
 
+        function updateUserCardStatus(uid, isOnline) {
+            const card = document.getElementById(`user-${uid}`);
+            if (card) {
+                if (isOnline) {
+                    card.classList.remove('offline');
+                } else {
+                    card.classList.add('offline');
+                }
+            }
+        }
+
         function updateUserCount(uid, clicks) {
             const countElement = document.getElementById(`count-${uid}`);
             if (countElement) {
@@ -206,14 +328,15 @@
             }
         }
 
-        function removeUser(uid) {
-            const card = document.getElementById(`user-${uid}`);
-            if (card) {
-                card.style.animation = 'fadeIn 0.3s ease-out reverse';
-                setTimeout(() => card.remove(), 300);
+        function updateTotalCount(totalClicks) {
+            const totalElement = document.getElementById('total-count');
+            if (totalElement) {
+                totalElement.textContent = totalClicks;
+                totalElement.classList.add('updated');
+                setTimeout(() => totalElement.classList.remove('updated'), 300);
             }
-            users.delete(uid);
         }
+
 
         function handleClick() {
             if (socket && socket.readyState === WebSocket.OPEN) {
@@ -272,6 +395,11 @@
                         console.log('Received users:', data.users);
                         console.log('My UID before:', myUid);
                         
+                        // Update total count
+                        if (data.totalClicks !== undefined) {
+                            updateTotalCount(data.totalClicks);
+                        }
+                        
                         // If we don't have a UID from cookie, try to determine it from the current connection
                         if (!myUid && data.currentUid) {
                             myUid = data.currentUid;
@@ -280,40 +408,67 @@
                         }
                         
                         data.users.forEach(user => {
-                            users.set(user.uid, user.clicks);
+                            users.set(user.uid, { clicks: user.clicks, online: true });
                             // Trim and compare UIDs
                             const trimmedUserUid = user.uid.trim();
                             const trimmedMyUid = myUid ? myUid.trim() : '';
                             const isMe = trimmedUserUid === trimmedMyUid;
                             console.log(`Comparing UIDs: "${user.uid}" vs "${myUid}" (trimmed: "${trimmedUserUid}" vs "${trimmedMyUid}") = ${isMe}`);
-                            const card = createUserCard(user.uid, user.clicks, isMe);
+                            const card = createUserCard(user.uid, user.clicks, isMe, true);
                             document.getElementById('users-grid').appendChild(card);
                         });
                         
                         // If current user is not in the list, add them with 0 clicks
                         if (myUid && !users.has(myUid)) {
                             console.log('Current user not in list, adding with 0 clicks');
-                            users.set(myUid, 0);
-                            const card = createUserCard(myUid, 0, true);
+                            users.set(myUid, { clicks: 0, online: true });
+                            const card = createUserCard(myUid, 0, true, true);
                             document.getElementById('users-grid').appendChild(card);
                         }
                         break;
                         
                     case 'user_joined':
                         if (!users.has(data.uid)) {
-                            users.set(data.uid, data.clicks);
-                            const card = createUserCard(data.uid, data.clicks, data.uid === myUid);
+                            users.set(data.uid, { clicks: data.clicks, online: true });
+                            const card = createUserCard(data.uid, data.clicks, data.uid === myUid, true);
                             document.getElementById('users-grid').appendChild(card);
+                        } else {
+                            // User was offline, now online
+                            const user = users.get(data.uid);
+                            user.online = true;
+                            users.set(data.uid, user);
+                            updateUserCardStatus(data.uid, true);
                         }
                         break;
                         
                     case 'user_left':
-                        removeUser(data.uid);
+                        if (users.has(data.uid)) {
+                            const user = users.get(data.uid);
+                            user.online = false;
+                            users.set(data.uid, user);
+                            updateUserCardStatus(data.uid, false);
+                        }
+                        
+                        // Update total count
+                        if (data.totalClicks !== undefined) {
+                            updateTotalCount(data.totalClicks);
+                        }
                         break;
                         
                     case 'update':
-                        users.set(data.uid, data.clicks);
+                        if (users.has(data.uid)) {
+                            const user = users.get(data.uid);
+                            user.clicks = data.clicks;
+                            users.set(data.uid, user);
+                        } else {
+                            users.set(data.uid, { clicks: data.clicks, online: true });
+                        }
                         updateUserCount(data.uid, data.clicks);
+                        
+                        // Update total count
+                        if (data.totalClicks !== undefined) {
+                            updateTotalCount(data.totalClicks);
+                        }
                         break;
                 }
             });
